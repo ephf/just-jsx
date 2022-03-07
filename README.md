@@ -5,7 +5,7 @@ A simple web package that allows you to compile JSX on the go.
 ## import
 
 ```html
-<script src="unpkg.com/just-jsx"></script>
+<script src="https://unpkg.com/just-jsx"></script>
 ```
 
 ## use
