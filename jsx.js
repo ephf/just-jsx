@@ -21,97 +21,9 @@ new MutationObserver(async (mutations) => {
             xhr.send();
           });
         }
-        const tokens = js
-          .replace(/>/g, ">>")
-          .split(
-            /([\(|\[|\&|=|>|:|,]|return)([ \r\n]*)(<.*?>)|(<\/.*?>)|([\{\}])/gs
-          )
-          .filter((a) => a)
-          .map((text) => ({
-            text,
-            type: text.match(/^<[^\/].*?>|^<>/s)
-              ? "node"
-              : text.match(/^<\/.*?>/s)
-              ? "node-end"
-              : "text",
-            full: !!text.match(/\/>$/s),
-          }));
-        let depth = 0;
-        let brackets = [];
-        tokens.forEach((token, i) => {
-          const { type, text } = token;
-          token.text = token.text.replace(/^>/, "");
-          token.text = token.text.replace(/>>/g, ">");
-          if (type != "node" && type != "node-end") {
-            if (depth && token.text.match(/\{/)) {
-              token.text = token.text.replace(/\{/g, "${");
-              brackets[0] = true;
-              return;
-            }
-            if (depth && token.text.match(/\}/)) {
-              brackets[0] = false;
-              return;
-            }
-            return;
-          }
-          if (type == "node") {
-            const [name, ending] = text
-              .match(/< *(.+?)[\n >] *(.*?)$/s)
-              ?.slice(1) ?? ["", ""];
-            const attributes = ending
-              .match(
-                / *[^ ]+? *= *["{].+?[}"]| *[^ ]+? *= *[^"{].*?[ >]| *[^ ]+?[ >]/g
-              )
-              ?.map((text) => {
-                const [name, value] =
-                  / *(.+?) *= *["{](.+?)[}"]| *(.+?) *= *([^"{].*?)[ >]| *([^ ]+?)(>|$)/
-                    .exec(text.replace(/[\r\n ]*\/?>?$/g, ""))
-                    ?.slice(1)
-                    .filter((a) => a) ?? ["", ""];
-                const type = text.match(/= *\{/)
-                  ? "code"
-                  : text.match(/= *"|=/)
-                  ? "string"
-                  : "empty";
-                return { name, value, type };
-              })
-              .filter(({ name }) => name);
-            token.text = `${
-              depth && !brackets[0] ? "`," : ""
-            }JSX.createElement(${
-              name
-                ? name[0].toLowerCase() != name[0]
-                  ? name
-                  : `"${name}"`
-                : "JSX.Collection"
-            },{`;
-            attributes?.forEach(({ name, value, type }, i) => {
-              if (i > 0) token.text += ",";
-              token.text += `${name}:`;
-              if (type == "code") token.text += value;
-              if (type == "string") token.text += `"${value}"`;
-              if (type == "empty") token.text += '""';
-            });
-            depth++;
-            brackets.unshift(false);
-            token.text += `}${
-              token.full
-                ? (--depth,
-                  brackets.shift(),
-                  `)${depth && !brackets[0] ? ",JSX.parseInnerHTML`" : ""}`)
-                : ",JSX.parseInnerHTML`"
-            }`;
-            return;
-          }
-          if (type == "node-end") {
-            depth--;
-            brackets.shift();
-            token.text = `\`)${
-              depth && !brackets[0] ? ",JSX.parseInnerHTML`" : ""
-            }`;
-          }
-        });
-        script.innerHTML = tokens.map(({ text }) => text).join("");
+        script.async = node.type == "module";
+        script.type = node.type;
+        script.innerHTML = JSX.compile(js, node.type == "module");
       }
     }
   }
@@ -156,8 +68,13 @@ window.JSX = {
     } else {
       element = document.createElement(element);
     }
-    for (const name of Object.keys(attributes))
+    for (const name of Object.keys(attributes)) {
+      if (typeof attributes[name] == "function") {
+        element[name] = attributes[name];
+        continue;
+      }
       element.setAttribute(name, attributes[name]);
+    }
     element = JSX.applySpecial(JSX.collectionToFragment(children, element));
     if (f?.prototype instanceof JSX.Component) {
       f = new f();
@@ -215,6 +132,122 @@ window.JSX = {
     };
     replaceChildren(div);
     return div.children.length ? div.children : div.innerHTML;
+  },
+  compile(js, module) {
+    const tokens = js
+      .replace(/>/g, ">>")
+      .split(
+        /([\(|\[|\&|=|>|:|,]|return|default)([ \r\n]*)(<.*?>)|(<\/.*?>)|([\{\}])/gs
+      )
+      .filter((a) => a)
+      .map((text) => ({
+        text,
+        type: text.match(/^<[^\/].*?>|^<>/s)
+          ? "node"
+          : text.match(/^<\/.*?>/s)
+          ? "node-end"
+          : "text",
+        full: !!text.match(/\/>$/s),
+      }));
+    let depth = 0;
+    let brackets = [];
+    tokens.forEach((token, i) => {
+      const { type, text } = token;
+      token.text = token.text.replace(/^>/, "");
+      token.text = token.text.replace(/>>/g, ">");
+      if (type != "node" && type != "node-end") {
+        if (depth && token.text.match(/\{/)) {
+          token.text = token.text.replace(/\{/g, "${");
+          brackets[0] = true;
+          return;
+        }
+        if (depth && token.text.match(/\}/)) {
+          brackets[0] = false;
+          return;
+        }
+        return;
+      }
+      if (type == "node") {
+        const [name, ending] = text
+          .match(/< *(.+?)[\n >] *(.*?)$/s)
+          ?.slice(1) ?? ["", ""];
+        const attributes = ending
+          .match(
+            / *[^ ]+? *= *["{].+?[}"]| *[^ ]+? *= *[^"{].*?[ >]| *[^ ]+?[ >]/g
+          )
+          ?.map((text) => {
+            const [name, value] =
+              / *(.+?) *= *["{](.+?)[}"]| *(.+?) *= *([^"{].*?)[ >]| *([^ ]+?)(>|$)/
+                .exec(text.replace(/[\r\n ]*\/?>?$/g, ""))
+                ?.slice(1)
+                .filter((a) => a) ?? ["", ""];
+            const type = text.match(/= *\{/)
+              ? "code"
+              : text.match(/= *"|=/)
+              ? "string"
+              : "empty";
+            return { name, value, type };
+          })
+          .filter(({ name }) => name);
+        token.text = `${depth && !brackets[0] ? "`," : ""}JSX.createElement(${
+          name
+            ? name[0].toLowerCase() != name[0]
+              ? name
+              : `"${name}"`
+            : "JSX.Collection"
+        },{`;
+        attributes?.forEach(({ name, value, type }, i) => {
+          if (i > 0) token.text += ",";
+          token.text += `${name}:`;
+          if (type == "code") token.text += value;
+          if (type == "string") token.text += `"${value}"`;
+          if (type == "empty") token.text += '""';
+        });
+        depth++;
+        brackets.unshift(false);
+        token.text += `}${
+          token.full
+            ? (--depth,
+              brackets.shift(),
+              `)${depth && !brackets[0] ? ",JSX.parseInnerHTML`" : ""}`)
+            : ",JSX.parseInnerHTML`"
+        }`;
+        return;
+      }
+      if (type == "node-end") {
+        depth--;
+        brackets.shift();
+        token.text = `\`)${
+          depth && !brackets[0] ? ",JSX.parseInnerHTML`" : ""
+        }`;
+      }
+    });
+    let code = tokens.map(({ text }) => text).join("");
+    if (module) {
+      code = code
+        .replace(
+          /^ *import *(.*?),? *\{(.+?)\} *from *['"](.+?)['"]/gm,
+          'let [$1,{$2}]=await JSX.import("$3")'
+        )
+        .replace(
+          /^ *import *(.+?)  *from *['"](.+?)['"]/gm,
+          'let [$1]=await JSX.import("$2")'
+        )
+        .replace(/^ *import *['"](.+?)['"]/gm, 'await JSX.import("$1")');
+    }
+    return code;
+  },
+  async import(url) {
+    const js = await new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+      xhr.onload = () => resolve(xhr.response);
+      xhr.open("GET", url);
+      xhr.send();
+    });
+    console.log(JSX.compile(js, true));
+    const module = `data:text/javascript;base64,${btoa(JSX.compile(js, true))}`;
+    const result = await import(module);
+    return [result.default, result];
   },
 };
 JSX.applySpecial(document.head);

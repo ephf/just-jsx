@@ -76,3 +76,20 @@ document.body.collect(
   </>
 );
 ```
+
+## other
+
+JSX automatically parses imports, but does not do so with dynamic imports. If you are using dynamic imports, use `JSX.import` instead of `import`
+
+```js
+const module = await JSX.import("file.js");
+```
+
+You can also compile javascript strings using a built in JSX function
+
+```js
+const myJSX = "<h1>Hello World</h1>";
+const compiledJSX = JSX.compile(myJSX, module?) // second arg true if code you are compiling is a module
+```
+
+Feel free to do pull requests and add issues to the [GitHub repository](https://github.com/ephf/just-jsx). This is not an official library from [React](https://www.npmjs.com/package/react), I'm just trying to make web development easier and faster.
