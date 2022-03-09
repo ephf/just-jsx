@@ -244,7 +244,6 @@ window.JSX = {
       xhr.open("GET", url);
       xhr.send();
     });
-    console.log(JSX.compile(js, true));
     const module = `data:text/javascript;base64,${btoa(JSX.compile(js, true))}`;
     const result = await import(module);
     return [result.default, result];
