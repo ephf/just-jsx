@@ -164,7 +164,7 @@ window.JSX = {
               if (
                 text.match(/^</) &&
                 ((foundFoot = false), true) &&
-                !(!!text.match(/^<\//) || !!text.match(/\/>$/))
+                !text.match(/^<\//)
               ) {
                 nodeDepth++;
                 return true;
@@ -172,9 +172,13 @@ window.JSX = {
               return false;
             })(),
             end: (() => {
-              if (text.match(/^<\//) || text.match(/\/>$/)) {
+              if (text.match(/^<\//)) {
                 nodeDepth--;
                 return true;
+              }
+              if (text.match(/\/>$/)) {
+                nodeDepth--;
+                return 2;
               }
               return false;
             })(),
@@ -205,13 +209,8 @@ window.JSX = {
           if (end) depth--;
           if (included) {
             if (!string && !inEmbed) {
-              if (end) {
-                out += ")";
-                attrs = 0;
-                return;
-              }
-              if (!e[i - 1]?.included) {
-                const name = text.match(/<(.*?)[ \n\r>]/)[1];
+              if (!e[i - 1]?.included && end !== true) {
+                const name = text.match(/<(.*?)[ \n\r\/>]/)[1];
                 out += `${depth > 1 ? "," : ""}JSX.createElement(${
                   name
                     ? name[0].toLowerCase() != name[0]
@@ -221,19 +220,31 @@ window.JSX = {
                 },{`;
               }
               const attributes = text
-                .match(/[\r\n ](.+?)\/?>?$/)?.[1]
+                .match(/[\r\n ](.*?)\/?>?$/)?.[1]
                 .split(" ")
-                .map((attr) => attr.replace(/=/g, ""))
-                .filter((a) => a);
+                .map((attr) => attr.replace(/=/g, ""));
               attributes?.forEach((attr, i, a) => {
-                out += `${attrs > 0 ? "," : ""}${attr}:${
-                  a.length - 1 != i ? "true" : ""
-                }`;
-                attrs++;
+                if (attr) {
+                  out += `${attrs > 0 ? "," : ""}${attr}:${
+                    a.length - 1 != i || text.match(/[\r\n ](.*?)>/)
+                      ? "true"
+                      : ""
+                  }`;
+                  attrs++;
+                }
               });
+              if (end && !node) {
+                out += `${end === 2 ? "}" : ""})`;
+                attrs = 0;
+                return;
+              }
             }
             if (foot) {
               out += "}";
+            }
+            if (end) {
+              out += ")";
+              attrs = 0;
             }
             if (string) {
               out += text;
@@ -261,14 +272,14 @@ window.JSX = {
             out += text;
             return;
           }
-          if (!text.trim()) return;
+          if (!text.trim().replace(/\n/g, "")) return;
           if (string) {
             out += `${depth > 0 ? "," : ""}${text}`;
             return;
           }
-          out += `${depth > 0 ? ',"' : ""}${depth > 0 ? text.trim() : text}${
-            depth > 0 ? '"' : ""
-          }`;
+          out += `${depth > 0 ? ',"' : ""}${
+            depth > 0 ? text.trim().replace(/\n/g, "") : text
+          }${depth > 0 ? '"' : ""}`;
         }
       );
       return out;
