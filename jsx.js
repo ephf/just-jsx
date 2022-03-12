@@ -1,37 +1,267 @@
-new MutationObserver(async (mutations) => {
-  for (const { addedNodes } of mutations) {
-    for (const node of addedNodes) {
-      JSX.applySpecial(node);
-      if (
-        typeof node.getAttribute?.("jsx") == "string" &&
-        node.getAttribute?.("jsx") != "compiled"
-      ) {
-        const parent = node.parentElement;
-        const script = document.createElement("script");
-        script.setAttribute("jsx", "compiled");
-        parent.replaceChild(script, node);
-        let js;
-        if (!node.src) {
-          js = node.innerHTML;
-        } else {
-          js = await new Promise((resolve) => {
-            const xhr = new XMLHttpRequest();
-            xhr.onload = () => resolve(xhr.response);
-            xhr.open("GET", node.src);
-            xhr.send();
-          });
-        }
-        script.async = node.type == "module";
-        script.type = node.type;
-        script.innerHTML = JSX.compile(js, node.type == "module");
-      }
-    }
-  }
-}).observe(document, {
-  subtree: true,
-  childList: true,
-});
 window.JSX = {
+  Syntax: {
+    StringList: class JSXStringList extends Array {},
+    TemplateList: class JSXTemplateList extends Array {},
+    ElementList: class JSXElementList extends Array {},
+    templateParts(template) {
+      const parts = [""];
+      let depth = 0;
+      [...template].forEach((char, i, s) => {
+        if (char == "$" && s[i - 1] != "\\") {
+          parts[0] += "$";
+          parts.unshift("");
+          return;
+        }
+        if (char == "{") {
+          depth++;
+          if (!parts[0]) {
+            parts[1] += "{";
+            return;
+          }
+        }
+        if (char == "}") {
+          depth--;
+          if (depth <= 0) {
+            parts.unshift("}");
+            return;
+          }
+        }
+        parts[0] += char;
+      });
+      return new this.TemplateList(
+        ...parts.reverse().reduce((a, b, i) => {
+          if (!(i % 2))
+            return [
+              ...a,
+              {
+                text: b,
+                string: true,
+                template: true,
+              },
+            ];
+          return [...a, ...this.strings(b)];
+        }, [])
+      );
+    },
+    strings(string) {
+      return new this.StringList(
+        ...string
+          .split(/(".*?(?<!\\)")|('.*?(?<!\\)')|(`[^`]*?(?<!\\)`)/g)
+          .filter((a) => a)
+          .reduce((a, b, i) => {
+            if (!(i % 2))
+              return [
+                ...a,
+                {
+                  text: b,
+                  string: false,
+                  template: false,
+                },
+              ];
+            if (b[0] == "`") return [...a, ...this.templateParts(b)];
+            return [
+              ...a,
+              {
+                text: b,
+                string: true,
+                template: false,
+              },
+            ];
+          }, [])
+      );
+    },
+    elements(stringList) {
+      if (!(stringList instanceof this.StringList)) return null;
+      const parts = [""];
+      let depth = 0;
+      let possible = true;
+      let embedDepth = 0;
+      let embed = "";
+      stringList.forEach(({ text, string }) => {
+        if (string) {
+          parts.unshift("", text);
+          if (depth <= 0) possible = false;
+          return;
+        }
+        [...text].forEach((char, i, s) => {
+          if (char == "{") {
+            embedDepth++;
+            if (embedDepth == 1) {
+              return;
+            }
+          }
+          if (char == "}") {
+            embedDepth--;
+            if (embedDepth <= 0) {
+              return;
+            }
+          }
+          if (embedDepth > 0) {
+            embed += char;
+            return;
+          }
+          if (embedDepth <= 0 && embed) {
+            parts.unshift(
+              "",
+              "}",
+              ...this.elements(this.strings(embed))
+                .map(({ text }) => text)
+                .reverse(),
+              "{"
+            );
+            embed = "";
+          }
+          if (char == "<") {
+            if (s[i + 1] == "/") {
+              depth--;
+            }
+            if (possible) {
+              depth++;
+              parts.unshift("<");
+              return;
+            }
+          }
+          if (char == ">" && depth > 0) {
+            parts[0] += ">";
+            parts.unshift("");
+            if (s[i - 1] == "/") {
+              depth--;
+            }
+            return;
+          }
+          if (char.match(/[~!%^&*(-+=[|:;,>?]/)) {
+            possible = true;
+          } else if (!char.match(/[\r\n ]/) && depth <= 0) {
+            possible = false;
+          }
+          parts[0] += char;
+        });
+        if (embedDepth <= 0 && embed) {
+          parts.unshift(
+            "",
+            "}",
+            ...this.elements(this.strings(embed))
+              .map(({ text }) => text)
+              .reverse(),
+            "{"
+          );
+          embed = "";
+        }
+      });
+      let foundFoot = true;
+      let inEmbed = 0;
+      return new this.ElementList(
+        ...parts
+          .reverse()
+          .filter((a) => a)
+          .map((text) => ({
+            text,
+            node: text.match(/^</) && ((foundFoot = false), true),
+            end: !!text.match(/^<\//) || !!text.match(/\/>$/),
+            included: !foundFoot,
+            foot: !!(text.match(/>$/) && (foundFoot = true)),
+            string: !!text.match(/^['"`]/),
+            embed:
+              (text == "{" && inEmbed == 0) || (text == "}" && inEmbed == 1),
+            inEmbed:
+              (text == "{" && (inEmbed += 1),
+              text == "}" ? ((inEmbed -= 1), true) : !!inEmbed),
+          }))
+      );
+    },
+    elementsToScript(elements) {
+      if (!(elements instanceof this.ElementList)) return null;
+      let out = "";
+      let depth = 0;
+      let attrs = 0;
+      elements.forEach(
+        ({ text, node, end, foot, included, string, embed, inEmbed }, i, e) => {
+          if (!node && !included && !inEmbed) {
+            if (!text.trim()) return;
+            out += `${depth > 0 ? ',"' : ""}${text.trim()}${
+              depth > 0 ? '"' : ""
+            }`;
+            return;
+          }
+          if (node && !end) depth++;
+          if (end) depth--;
+          if (included) {
+            if (!string && !inEmbed) {
+              if (end) {
+                out += ")";
+                attrs = 0;
+                return;
+              }
+              if (!e[i - 1]?.included) {
+                const name = text.match(/<(.*?)[ >]/)[1];
+                out += `${depth > 1 ? "," : ""}JSX.createElement(${
+                  name
+                    ? name[0].toLowerCase() != name[0]
+                      ? name
+                      : `"${name}"`
+                    : "JSX.Collection"
+                },{`;
+              }
+              const attributes = text
+                .match(/ (.+?)\/?>?$/)?.[1]
+                .split(" ")
+                .map((attr) => attr.replace(/=/g, ""));
+              attributes?.forEach((attr, i, a) => {
+                out += `${attrs > 0 ? "," : ""}${attr}:${
+                  a.length - 1 != i ? "true" : ""
+                }`;
+                attrs++;
+              });
+            }
+            if (foot) {
+              out += "}";
+            }
+            if (string) {
+              out += text;
+              return;
+            }
+            if (inEmbed) {
+              if (embed) {
+                out += text.replace(/{/, "(").replace(/}/, ")");
+                return;
+              }
+              out += text;
+              return;
+            }
+            return;
+          }
+          if (inEmbed) {
+            if (embed) {
+              if (text == "{") {
+                out += `${depth > 0 ? "," : ""}(`;
+              } else {
+                out += ")";
+              }
+              return;
+            }
+            out += text;
+          }
+        }
+      );
+      return out;
+    },
+    compile(jsx, module) {
+      let js = this.elementsToScript(this.elements(this.strings(jsx)));
+      if (module) {
+        js = js
+          .replace(
+            /^ *import *(.*?),? *\{(.+?)\} *from *['"](.+?)['"]/gm,
+            'let [$1,{$2}]=await JSX.import("$3")'
+          )
+          .replace(
+            /^ *import *(.+?)  *from *['"](.+?)['"]/gm,
+            'let [$1]=await JSX.import("$2")'
+          )
+          .replace(/^ *import *['"](.+?)['"]/gm, 'await JSX.import("$1")');
+      }
+      return js;
+    },
+  },
   NodeGroup: class NodeGroup {
     constructor(children) {
       this.children = children;
@@ -133,110 +363,6 @@ window.JSX = {
     replaceChildren(div);
     return div.children.length ? div.children : div.innerHTML;
   },
-  compile(js, module) {
-    const tokens = js
-      .replace(/>/g, ">>")
-      .split(
-        /([\(|\[|\&|=|>|:|,]|return|default)([ \r\n]*)(<.*?>)|(<\/.*?>)|([\{\}])/gs
-      )
-      .filter((a) => a)
-      .map((text) => ({
-        text,
-        type: text.match(/^<[^\/].*?>|^<>/s)
-          ? "node"
-          : text.match(/^<\/.*?>/s)
-          ? "node-end"
-          : "text",
-        full: !!text.match(/\/>$/s),
-      }));
-    let depth = 0;
-    let brackets = [];
-    tokens.forEach((token, i) => {
-      const { type, text } = token;
-      token.text = token.text.replace(/^>/, "");
-      token.text = token.text.replace(/>>/g, ">");
-      if (type != "node" && type != "node-end") {
-        if (depth && token.text.match(/\{/)) {
-          token.text = token.text.replace(/\{/g, "${");
-          brackets[0] = true;
-          return;
-        }
-        if (depth && token.text.match(/\}/)) {
-          brackets[0] = false;
-          return;
-        }
-        return;
-      }
-      if (type == "node") {
-        const [name, ending] = text
-          .match(/< *(.+?)[\n >] *(.*?)$/s)
-          ?.slice(1) ?? ["", ""];
-        const attributes = ending
-          .match(
-            / *[^ ]+? *= *["{].+?[}"]| *[^ ]+? *= *[^"{].*?[ >]| *[^ ]+?[ >]/g
-          )
-          ?.map((text) => {
-            const [name, value] =
-              / *(.+?) *= *["{](.+?)[}"]| *(.+?) *= *([^"{].*?)[ >]| *([^ ]+?)(>|$)/
-                .exec(text.replace(/[\r\n ]*\/?>?$/g, ""))
-                ?.slice(1)
-                .filter((a) => a) ?? ["", ""];
-            const type = text.match(/= *\{/)
-              ? "code"
-              : text.match(/= *"|=/)
-              ? "string"
-              : "empty";
-            return { name, value, type };
-          })
-          .filter(({ name }) => name);
-        token.text = `${depth && !brackets[0] ? "`," : ""}JSX.createElement(${
-          name
-            ? name[0].toLowerCase() != name[0]
-              ? name
-              : `"${name}"`
-            : "JSX.Collection"
-        },{`;
-        attributes?.forEach(({ name, value, type }, i) => {
-          if (i > 0) token.text += ",";
-          token.text += `${name}:`;
-          if (type == "code") token.text += value;
-          if (type == "string") token.text += `"${value}"`;
-          if (type == "empty") token.text += '""';
-        });
-        depth++;
-        brackets.unshift(false);
-        token.text += `}${
-          token.full
-            ? (--depth,
-              brackets.shift(),
-              `)${depth && !brackets[0] ? ",JSX.parseInnerHTML`" : ""}`)
-            : ",JSX.parseInnerHTML`"
-        }`;
-        return;
-      }
-      if (type == "node-end") {
-        depth--;
-        brackets.shift();
-        token.text = `\`)${
-          depth && !brackets[0] ? ",JSX.parseInnerHTML`" : ""
-        }`;
-      }
-    });
-    let code = tokens.map(({ text }) => text).join("");
-    if (module) {
-      code = code
-        .replace(
-          /^ *import *(.*?),? *\{(.+?)\} *from *['"](.+?)['"]/gm,
-          'let [$1,{$2}]=await JSX.import("$3")'
-        )
-        .replace(
-          /^ *import *(.+?)  *from *['"](.+?)['"]/gm,
-          'let [$1]=await JSX.import("$2")'
-        )
-        .replace(/^ *import *['"](.+?)['"]/gm, 'await JSX.import("$1")');
-    }
-    return code;
-  },
   async import(url) {
     const js = await new Promise((resolve) => {
       const xhr = new XMLHttpRequest();
@@ -244,9 +370,41 @@ window.JSX = {
       xhr.open("GET", url);
       xhr.send();
     });
-    const module = `data:text/javascript;base64,${btoa(JSX.compile(js, true))}`;
+    const module = `data:text/javascript;base64,${btoa(
+      JSX.Syntax.compile(js, true)
+    )}`;
     const result = await import(module);
     return [result.default, result];
   },
 };
+new MutationObserver(async (mutations) => {
+  for (const { addedNodes } of mutations) {
+    for (const node of addedNodes) {
+      JSX.applySpecial(node);
+      if (
+        typeof node.getAttribute?.("jsx") == "string" &&
+        node.getAttribute?.("jsx") != "compiled"
+      ) {
+        const parent = node.parentElement;
+        const script = document.createElement("script");
+        script.setAttribute("jsx", "compiled");
+        parent.replaceChild(script, node);
+        let js;
+        if (!node.src) {
+          js = node.innerHTML;
+        } else {
+          js = await new Promise((resolve) => {
+            const xhr = new XMLHttpRequest();
+            xhr.onload = () => resolve(xhr.response);
+            xhr.open("GET", node.src);
+            xhr.send();
+          });
+        }
+        script.async = node.type == "module";
+        script.type = node.type;
+        script.innerHTML = JSX.Syntax.compile(js, node.type == "module");
+      }
+    }
+  }
+}).observe(document, { subtree: true, childList: true });
 JSX.applySpecial(document.head);
