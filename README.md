@@ -5,7 +5,7 @@ A simple web package that allows you to compile JSX on the go.
 ## import
 
 ```html
-<script src="https://unpkg.com/just-jsx@beta"></script>
+<script src="https://unpkg.com/just-jsx"></script>
 ```
 
 ## use
@@ -93,5 +93,3 @@ const compiledJSX = JSX.Syntax.compile(myJSX, module?) // second arg true if cod
 ```
 
 Feel free to do pull requests and add issues to the [GitHub repository](https://github.com/ephf/just-jsx). This is not an official library from [React](https://www.npmjs.com/package/react), I'm just trying to make web development easier and faster.
-
-_in beta because I just rewrote the whole JSX parser and I might need to work things out_
