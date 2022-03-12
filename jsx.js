@@ -78,7 +78,22 @@ window.JSX = {
       let embedDepth = 0;
       let embed = "";
       stringList.forEach(({ text, string }) => {
+        if (embedDepth <= 0 && embed) {
+          parts.unshift(
+            "",
+            "}",
+            ...this.elements(this.strings(embed))
+              .map(({ text }) => text)
+              .reverse(),
+            "{"
+          );
+          embed = "";
+        }
         if (string) {
+          if (embed) {
+            embed += text;
+            return;
+          }
           parts.unshift("", text);
           if (depth <= 0) possible = false;
           return;
@@ -87,29 +102,28 @@ window.JSX = {
           if (char == "{") {
             embedDepth++;
             if (embedDepth == 1) {
+              embed += " ";
               return;
             }
           }
           if (char == "}") {
             embedDepth--;
-            if (embedDepth <= 0) {
+            if (embedDepth <= 0 && embed) {
+              parts.unshift(
+                "",
+                "}",
+                ...this.elements(this.strings(embed))
+                  .map(({ text }) => text)
+                  .reverse(),
+                "{"
+              );
+              embed = "";
               return;
             }
           }
           if (embedDepth > 0) {
             embed += char;
             return;
-          }
-          if (embedDepth <= 0 && embed) {
-            parts.unshift(
-              "",
-              "}",
-              ...this.elements(this.strings(embed))
-                .map(({ text }) => text)
-                .reverse(),
-              "{"
-            );
-            embed = "";
           }
           if (char == "<") {
             if (s[i + 1] == "/") {
@@ -136,36 +150,47 @@ window.JSX = {
           }
           parts[0] += char;
         });
-        if (embedDepth <= 0 && embed) {
-          parts.unshift(
-            "",
-            "}",
-            ...this.elements(this.strings(embed))
-              .map(({ text }) => text)
-              .reverse(),
-            "{"
-          );
-          embed = "";
-        }
       });
       let foundFoot = true;
       let inEmbed = 0;
+      let nodeDepth = 0;
       return new this.ElementList(
         ...parts
           .reverse()
           .filter((a) => a)
           .map((text) => ({
             text,
-            node: text.match(/^</) && ((foundFoot = false), true),
-            end: !!text.match(/^<\//) || !!text.match(/\/>$/),
+            node: (() => {
+              if (
+                text.match(/^</) &&
+                ((foundFoot = false), true) &&
+                !(!!text.match(/^<\//) || !!text.match(/\/>$/))
+              ) {
+                nodeDepth++;
+                return true;
+              }
+              return false;
+            })(),
+            end: (() => {
+              if (text.match(/^<\//) || text.match(/\/>$/)) {
+                nodeDepth--;
+                return true;
+              }
+              return false;
+            })(),
+            nodeDepth,
             included: !foundFoot,
             foot: !!(text.match(/>$/) && (foundFoot = true)),
             string: !!text.match(/^['"`]/),
             embed:
-              (text == "{" && inEmbed == 0) || (text == "}" && inEmbed == 1),
+              nodeDepth > 0
+                ? (text == "{" && inEmbed == 0) || (text == "}" && inEmbed == 1)
+                : false,
             inEmbed:
-              (text == "{" && (inEmbed += 1),
-              text == "}" ? ((inEmbed -= 1), true) : !!inEmbed),
+              nodeDepth > 0
+                ? (text == "{" && (inEmbed += 1),
+                  text == "}" ? ((inEmbed -= 1), true) : !!inEmbed)
+                : false,
           }))
       );
     },
@@ -176,13 +201,6 @@ window.JSX = {
       let attrs = 0;
       elements.forEach(
         ({ text, node, end, foot, included, string, embed, inEmbed }, i, e) => {
-          if (!node && !included && !inEmbed) {
-            if (!text.trim()) return;
-            out += `${depth > 0 ? ',"' : ""}${text.trim()}${
-              depth > 0 ? '"' : ""
-            }`;
-            return;
-          }
           if (node && !end) depth++;
           if (end) depth--;
           if (included) {
@@ -193,7 +211,7 @@ window.JSX = {
                 return;
               }
               if (!e[i - 1]?.included) {
-                const name = text.match(/<(.*?)[ >]/)[1];
+                const name = text.match(/<(.*?)[ \n\r>]/)[1];
                 out += `${depth > 1 ? "," : ""}JSX.createElement(${
                   name
                     ? name[0].toLowerCase() != name[0]
@@ -203,9 +221,10 @@ window.JSX = {
                 },{`;
               }
               const attributes = text
-                .match(/ (.+?)\/?>?$/)?.[1]
+                .match(/[\r\n ](.+?)\/?>?$/)?.[1]
                 .split(" ")
-                .map((attr) => attr.replace(/=/g, ""));
+                .map((attr) => attr.replace(/=/g, ""))
+                .filter((a) => a);
               attributes?.forEach((attr, i, a) => {
                 out += `${attrs > 0 ? "," : ""}${attr}:${
                   a.length - 1 != i ? "true" : ""
@@ -230,7 +249,7 @@ window.JSX = {
             }
             return;
           }
-          if (inEmbed) {
+          if (inEmbed && depth > 0) {
             if (embed) {
               if (text == "{") {
                 out += `${depth > 0 ? "," : ""}(`;
@@ -240,7 +259,16 @@ window.JSX = {
               return;
             }
             out += text;
+            return;
           }
+          if (!text.trim()) return;
+          if (string) {
+            out += `${depth > 0 ? "," : ""}${text}`;
+            return;
+          }
+          out += `${depth > 0 ? ',"' : ""}${depth > 0 ? text.trim() : text}${
+            depth > 0 ? '"' : ""
+          }`;
         }
       );
       return out;
