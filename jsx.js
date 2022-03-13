@@ -109,14 +109,7 @@ window.JSX = {
           if (char == "}") {
             embedDepth--;
             if (embedDepth <= 0 && embed) {
-              parts.unshift(
-                "",
-                "}",
-                ...this.elements(this.strings(embed))
-                  .map(({ text }) => text)
-                  .reverse(),
-                "{"
-              );
+              parts.unshift("", "}", this.compile(embed), "{");
               embed = "";
               return;
             }
