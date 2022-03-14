@@ -136,7 +136,10 @@ window.JSX = {
             }
             return;
           }
-          if (char.match(/[~!%^&*(-+=[|:;,>?]/)) {
+          if (
+            char.match(/[~!%^&*(-+=[|:;,>?]/) ||
+            parts[0].match(/return *$/)
+          ) {
             possible = true;
           } else if (!char.match(/[\r\n ]/) && depth <= 0) {
             possible = false;
