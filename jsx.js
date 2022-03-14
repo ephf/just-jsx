@@ -268,13 +268,13 @@ window.JSX = {
             out += text;
             return;
           }
-          if (!text.replace(/\n/g, "")) return;
+          if (!text.replace(/[\n\r]/g, "")) return;
           if (string) {
             out += `${depth > 0 ? "," : ""}${text}`;
             return;
           }
           out += `${depth > 0 ? ',"' : ""}${
-            depth > 0 ? text.replace(/\n/g, "") : text
+            depth > 0 ? text.replace(/[\n\r]/g, "") : text
           }${depth > 0 ? '"' : ""}`;
         }
       );
