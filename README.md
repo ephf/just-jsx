@@ -1,6 +1,10 @@
-# Just JSX
+<h1 align="center">
+<img src="just-jsx-wide.png">
+</h1>
 
-A simple web package that allows you to compile JSX on the go.
+![](https://img.shields.io/npm/dt/just-jsx?style=for-the-badge) ![](https://img.shields.io/github/issues/ephf/just-jsx?style=for-the-badge) ![](https://img.shields.io/npm/l/just-jsx?style=for-the-badge) ![](https://img.shields.io/npm/v/just-jsx?style=for-the-badge)
+
+✏️ A simple web package that allows you to compile JSX on the go.
 
 ## import
 
