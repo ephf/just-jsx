@@ -23,15 +23,19 @@ You can use custom elements by capitalizing the first letter of the tag
 ```jsx
 function CustomElement({ attributes }) {
   this.innerHTML = "This is a custom element!";
+
+  // or
+
+  return <my-own-element>This is a custom element!</my-own-element>;
 }
 
-document.body.append(<CustomElement></CustomElement>);
+document.body.append(<CustomElement />);
 
 // or
 
 class CustomElement extends JSX.Component {
   render({ attributes }) {
-    this.innerHTML = "This is a custom element!";
+    return <h1>This is a custom element</h1>;
   }
 }
 ```
@@ -75,6 +79,54 @@ document.body.collect(
     <p>How are you?</p>
   </>
 );
+```
+
+To make finding elements that you have created faster, you can also use hooks. These are hook examples in a `JSX.Component`. Pressing the button will increase the number shown on the paragraph element.
+
+```jsx
+class HookExample extends JSX.Component {
+  render() {
+    this.count = 0;
+    return (
+      <div>
+        <button
+          onclick={() => {
+            this.count++;
+            this.counter.innerHTML = count; // <-- using hook here
+          }}
+        >
+          Click me!
+        </button>
+        <p:counter>0</p:counter>
+      </div>
+    );
+  }
+}
+
+document.body.append(<HookExample />);
+```
+
+Just know you can't directly access the hook in a function, although every element created through JSX has a hooks property. This time I will get the hook using a normal function (so I can access the element's `this` keyword) and the `.hooks` parameter.
+
+```jsx
+function HookExample() {
+  let count = 0;
+  return (
+    <div>
+      <button
+        onclick={function () {
+          count++;
+          this.hooks.counter.innerHTML = count;
+        }}
+      >
+        Click me!
+      </button>
+      <p:counter>0</p:counter>
+    </div>
+  );
+}
+
+document.body.append(<HookExample />);
 ```
 
 ## other

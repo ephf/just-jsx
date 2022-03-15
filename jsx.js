@@ -197,23 +197,40 @@ window.JSX = {
     elementsToScript(elements) {
       if (!(elements instanceof this.ElementList)) return null;
       let out = "";
-      let depth = 0;
       let attrs = 0;
       elements.forEach(
-        ({ text, node, end, foot, included, string, embed, inEmbed }, i, e) => {
-          if (node && !end) depth++;
-          if (end) depth--;
+        (
+          {
+            text,
+            node,
+            end,
+            foot,
+            included,
+            string,
+            embed,
+            inEmbed,
+            nodeDepth,
+          },
+          i,
+          e
+        ) => {
           if (included) {
             if (!string && !inEmbed) {
               if (!e[i - 1]?.included && end !== true) {
                 const name = text.match(/<(.*?)[ \n\r\/>]/)[1];
-                out += `${depth > 1 ? "," : ""}JSX.createElement(${
+                out += `${
+                  nodeDepth + (end || 1) - 1 > 1 ? "," : ""
+                }JSX.createElement([${
                   name
                     ? name[0].toLowerCase() != name[0]
-                      ? name
-                      : `"${name}"`
+                      ? name.replace(/:.+?$/, "")
+                      : `"${name.replace(/:.+?$/, "")}"`
                     : "JSX.Collection"
-                },{`;
+                }${
+                  name.match(/:.+?$/)
+                    ? `,"${name.match(/:(.+?)$/)[1]}"`
+                    : ",null"
+                }${nodeDepth + (end || 1) - 1 <= 1 ? ",true" : ",false"}],{`;
               }
               const attributes = text
                 .match(/[\r\n ](.*?)\/?>?$/)?.[1]
@@ -256,10 +273,10 @@ window.JSX = {
             }
             return;
           }
-          if (inEmbed && depth > 0) {
+          if (inEmbed && nodeDepth > 0) {
             if (embed) {
               if (text == "{") {
-                out += `${depth > 0 ? "," : ""}(`;
+                out += `${nodeDepth > 0 ? "," : ""}(`;
               } else {
                 out += ")";
               }
@@ -270,12 +287,12 @@ window.JSX = {
           }
           if (!text.replace(/[\n\r]/g, "")) return;
           if (string) {
-            out += `${depth > 0 ? "," : ""}${text}`;
+            out += `${nodeDepth > 0 ? "," : ""}${text}`;
             return;
           }
-          out += `${depth > 0 ? ',"' : ""}${
-            depth > 0 ? text.replace(/[\n\r]/g, "") : text
-          }${depth > 0 ? '"' : ""}`;
+          out += `${nodeDepth > 0 ? ',"' : ""}${
+            nodeDepth > 0 ? text.replace(/[\n\r]/g, "") : text
+          }${nodeDepth > 0 ? '"' : ""}`;
         }
       );
       return out;
@@ -325,7 +342,7 @@ window.JSX = {
       return element;
     }
   },
-  createElement(element, attributes, ...children) {
+  createElement([element, hook, parent], attributes, ...children) {
     let f;
     if (typeof element == "function") {
       f = element;
@@ -341,9 +358,44 @@ window.JSX = {
       element.setAttribute(name, attributes[name]);
     }
     element = JSX.applySpecial(JSX.collectionToFragment(children, element));
+    const applyHookKey = (element) => {
+      if (element) {
+        element.JSX = {};
+        element.JSX.hook = hook;
+      }
+    };
+    const applyHook = (element, hooks) => {
+      if (element) {
+        const givenHooks = !!hooks;
+        hooks ??= { parent: element };
+        if (element.JSX.hook) {
+          hooks[element.JSX.hook] = element;
+        }
+        [...(element.children ?? [])].forEach((child) => {
+          applyHook(child, hooks);
+        });
+        if (!givenHooks) {
+          const giveHooks = ({ children }) => {
+            [...(children ?? [])].forEach((child) => {
+              child.hooks = hooks;
+              giveHooks(child);
+            });
+          };
+          element.hooks = hooks;
+          giveHooks(element);
+        }
+      }
+    };
+    applyHookKey(element);
+    if (parent) applyHook(element);
     if (f?.prototype instanceof JSX.Component) {
-      f = new f();
-      const value = JSX.applySpecial(f.render.apply(element, [attributes]));
+      f = new f(attributes);
+      const value = JSX.applySpecial(f.render(attributes));
+      applyHookKey(value);
+      if (parent) applyHook(value);
+      Object.entries((value ?? element).hooks).forEach(([hook, element]) => {
+        f[hook] = element;
+      });
       return value
         ? value instanceof JSX.NodeGroup
           ? value.children
@@ -351,6 +403,8 @@ window.JSX = {
         : element;
     }
     const value = JSX.applySpecial(f?.apply?.(element, [attributes]));
+    applyHookKey(value);
+    if (parent) applyHook(value);
     return value
       ? value instanceof JSX.NodeGroup
         ? value.children
@@ -360,7 +414,12 @@ window.JSX = {
   Collection: function () {
     return new JSX.NodeGroup(this.children);
   },
-  Component: class Component {},
+  Component: class Component {
+    hooks = {};
+    constructor(props) {
+      this.props = props;
+    }
+  },
   parseInnerHTML([...text], ...insert) {
     const elements = [];
     insert.forEach((value, i) => {
