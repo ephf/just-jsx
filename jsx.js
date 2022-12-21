@@ -62,6 +62,13 @@ window.jsx = ([...strings], ...inputs) => {
   return div.children[0];
 }
 
+jsx.script = document.currentScript;
+
+jsx.import = async src => {
+  const js = await fetch(src).then(res => res.text());
+  return await import(`data:text/javascript;base64,${btoa(jsx.parse(js))}`);
+}
+
 jsx.registry = {};
 jsx.functions = [];
 
@@ -188,13 +195,17 @@ jsx.parse = script => {
     }
 
     return result + char;
-  }, "");
+  }, "")
+  .replace(/^ *(import)( *\w* *)?(, *)?{?(.*?)}?( *from *)?(".+?")/gm, (_match, _import, def, _comma, obj, _from, src) => 
+    `let {${def ? `default: ${def}` : ""}${obj ? "," : ""}${obj}} = await jsx.import(${src})`
+  );
 }
 
 new MutationObserver(mutations => {
   for(const { addedNodes } of mutations) {
     for(const node of addedNodes) {
       if(node.nodeName == "SCRIPT" && node.hasAttribute("jsx") && node.getAttribute("jsx") != "compiled") {
+        if(node.innerHTML.match(/^ *import/gm)) node.setAttribute("async", "");
         if(node.src) {
           fetch(node.src).then(res => res.text()).then(content => {
             node.innerHTML = jsx.parse(content);
