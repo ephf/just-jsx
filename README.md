@@ -1,6 +1,6 @@
-<h1 align="center">
-<img src="just-jsx.png">
-</h1>
+<img src="jsx.png" width=100 align=right>
+
+# Just JSX
 
 ![](https://img.shields.io/npm/dt/just-jsx?style=for-the-badge) ![](https://img.shields.io/github/issues/ephf/just-jsx?style=for-the-badge) ![](https://img.shields.io/npm/l/just-jsx?style=for-the-badge) ![](https://img.shields.io/npm/v/just-jsx?style=for-the-badge)
 
@@ -66,6 +66,11 @@ Adds a property `name` to target element with `value` (parsed with `JSON.parse` 
 ```
 
 ## Changelog
+
+##### *5.1.1*
+
+- Fixed `default:,` showing up before imports without a default selector]
+- New logo
 
 ##### 5.1.0
 

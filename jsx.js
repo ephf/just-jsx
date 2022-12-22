@@ -197,7 +197,7 @@ jsx.parse = script => {
     return result + char;
   }, "")
   .replace(/^ *(import)( *\w* *)?(, *)?{?(.*?)}?( *from *)?(".+?")/gm, (_match, _import, def, _comma, obj, _from, src) => 
-    `let {${def ? `default: ${def}` : ""}${obj ? "," : ""}${obj}} = await jsx.import(${src})`
+    `let {${def.trim() ? `default: ${def}` : ""}${def.trim() && obj ? "," : ""}${obj}} = await jsx.import(${src})`
   );
 }
 
