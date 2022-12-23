@@ -5,6 +5,7 @@
 ![](https://img.shields.io/npm/dt/just-jsx?style=for-the-badge) ![](https://img.shields.io/github/issues/ephf/just-jsx?style=for-the-badge) ![](https://img.shields.io/npm/l/just-jsx?style=for-the-badge) ![](https://img.shields.io/npm/v/just-jsx?style=for-the-badge)
 
 > compile JSX on the go.
+
 ## Import
 
 ```html
@@ -67,9 +68,14 @@ Adds a property `name` to target element with `value` (parsed with `JSON.parse` 
 
 ## Changelog
 
+##### 5.2.0
+
+- Custom Element's return values will inherit attributes
+- `<></>` syntax for collections (`documentFragment`)
+
 ##### *5.1.1*
 
-- Fixed `default:,` showing up before imports without a default selector]
+- Fixed `default:,` showing up before imports without a default selector
 - New logo
 
 ##### 5.1.0

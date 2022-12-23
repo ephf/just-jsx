@@ -20,46 +20,57 @@ window.jsx = ([...strings], ...inputs) => {
     return input + string;
   }).join("");
 
-  (function filterChildren(parent) {
-    if(!parent?.children) return;
-    [...parent.children].forEach(child => {
-      const attributeNames = child.getAttributeNames();
-
-      if(child.nodeName == "JSXPLACEHOLDER") {
-        child.replaceWith(elements[Number(child.id)]);
-      }
-
-      const cel = jsx.registry[child.nodeName];
-      if(cel) {
-        const newChild = cel.call(child, jsx.attributesToObject(child));
-        child.replaceWith(newChild);
-        child = newChild;
-      }
-
-      attributeNames.forEach(name => {
-        const [label, content] = name.split(":");
-        if(content) {
-          if(label == "var") {
-            window[content] = child;
-          } else if(label == "let") {
-            (function addVariable(parent) {
-              parent[content] = child;
-              [...parent.children].forEach(child => addVariable(child));
-            })(div);
-          } else if(label == "data") {
-            let data = child.getAttribute(name);
-            try { data = JSON.parse(data) } catch(e) {}
-            child[content] = data;
-          }
-          if(child.hasAttribute(name)) child.removeAttribute(name);
-        }
-      });
-
-      filterChildren(child);
-    });
-  })(div);
+  const quickResolve = jsx.filterChildren(div);
+  if(quickResolve) return quickResolve.value;
 
   return div.children[0];
+}
+
+jsx.filterChildren = parent => {
+  if(!parent?.children) return;
+  let quickResolve;
+  [...parent.children].forEach(child => {
+    const attributeNames = child.getAttributeNames();
+
+    if(child.nodeName == "JSXPLACEHOLDER") {
+      child.replaceWith(elements[Number(child.id)]);
+    }
+
+    const cel = jsx.registry[child.nodeName];
+    newChildLogic: if(cel) {
+      const newChild = cel.call(child, jsx.attributesToObject(child));
+      if(newChild instanceof jsx.QuickResolve) {
+        quickResolve = newChild;
+        break newChildLogic;
+      }
+      child.getAttributeNames().forEach(name => newChild.setAttribute(name, child.getAttribute(name)));
+      child.replaceWith(newChild);
+      child = newChild;
+    }
+
+    attributeNames.forEach(name => {
+      const [label, content] = name.split(":");
+      if(content) {
+        if(label == "var") {
+          window[content] = child;
+        } else if(label == "let") {
+          (function addVariable(parent) {
+            parent[content] = child;
+            [...parent.children].forEach(child => addVariable(child));
+          })(div);
+        } else if(label == "data") {
+          let data = child.getAttribute(name);
+          try { data = JSON.parse(data) } catch(e) {}
+          child[content] = data;
+        }
+        if(child.hasAttribute(name)) child.removeAttribute(name);
+      }
+    });
+
+    jsx.filterChildren(child);
+  });
+
+  return quickResolve;
 }
 
 jsx.script = document.currentScript;
@@ -69,7 +80,18 @@ jsx.import = async src => {
   return await import(`data:text/javascript;base64,${btoa(jsx.parse(js))}`);
 }
 
-jsx.registry = {};
+jsx.QuickResolve = class {
+  constructor(value) {
+    this.value = value;
+  }
+}
+
+jsx.registry = {
+  "JSX:COLLECTION"() {
+    jsx.filterChildren(this);
+    return new jsx.QuickResolve(jsx.collect(this.children));
+  }
+};
 jsx.functions = [];
 
 jsx.collect = elements => {
@@ -163,7 +185,9 @@ jsx.parse = script => {
           if(top.name.match(/^[A-Z]/) && !top.close) {
             result = result.replace(/(\w+)$/, `\${(jsx.registry.${top.name.toUpperCase()}=$1,"$1")}`);
           }
-          // NAMELOGIC
+          if(!top.name) {
+            result += "jsx:collection";
+          }
         }
       }
 
