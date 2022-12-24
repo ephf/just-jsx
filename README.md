@@ -68,6 +68,11 @@ Adds a property `name` to target element with `value` (parsed with `JSON.parse` 
 
 ## Changelog
 
+##### *5.2.1*
+
+- Fixed `<></>` inside custom elements
+- Any time there is more than one child to the creation div, `jsx` will return a document fragment
+
 ##### 5.2.0
 
 - Custom Element's return values will inherit attributes

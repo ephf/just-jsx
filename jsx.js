@@ -20,15 +20,14 @@ window.jsx = ([...strings], ...inputs) => {
     return input + string;
   }).join("");
 
-  const quickResolve = jsx.filterChildren(div);
-  if(quickResolve) return quickResolve.value;
+  jsx.filterChildren(div);
 
+  if(div.children.length > 1) return jsx.collect(div.children);
   return div.children[0];
 }
 
 jsx.filterChildren = parent => {
   if(!parent?.children) return;
-  let quickResolve;
   [...parent.children].forEach(child => {
     const attributeNames = child.getAttributeNames();
 
@@ -37,12 +36,8 @@ jsx.filterChildren = parent => {
     }
 
     const cel = jsx.registry[child.nodeName];
-    newChildLogic: if(cel) {
+    if(cel) {
       const newChild = cel.call(child, jsx.attributesToObject(child));
-      if(newChild instanceof jsx.QuickResolve) {
-        quickResolve = newChild;
-        break newChildLogic;
-      }
       child.getAttributeNames().forEach(name => newChild.setAttribute(name, child.getAttribute(name)));
       child.replaceWith(newChild);
       child = newChild;
@@ -69,8 +64,6 @@ jsx.filterChildren = parent => {
 
     jsx.filterChildren(child);
   });
-
-  return quickResolve;
 }
 
 jsx.script = document.currentScript;
@@ -80,16 +73,10 @@ jsx.import = async src => {
   return await import(`data:text/javascript;base64,${btoa(jsx.parse(js))}`);
 }
 
-jsx.QuickResolve = class {
-  constructor(value) {
-    this.value = value;
-  }
-}
-
 jsx.registry = {
   "JSX:COLLECTION"() {
     jsx.filterChildren(this);
-    return new jsx.QuickResolve(jsx.collect(this.children));
+    return jsx.collect(this.children);
   }
 };
 jsx.functions = [];
