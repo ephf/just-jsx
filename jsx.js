@@ -7,6 +7,9 @@
   window.jsx = {
     _functionRegistry: [],
     createElement(name, attributes, ...children) {
+      children = children.map((child) =>
+        child instanceof Array ? jsx.createElement("", null, ...child) : child
+      );
       if (typeof name == "function") {
         return name(attributes, ...children);
       }
