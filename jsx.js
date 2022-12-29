@@ -1,230 +1,316 @@
-window.jsx = ([...strings], ...inputs) => {
-  const elements = [];
-  const div = document.createElement("div");
-  div.innerHTML = strings.map((string, i) => {
-    if(i == 0) return string;
-    let input = inputs[i - 1];
+{
+  if (typeof window == "undefined") global.window = global;
 
-    if(input instanceof Array) {
-      input = jsx.collect(input);
-    }
-    if(input instanceof Element || input instanceof DocumentFragment) {
-      elements.push(input);
-      input = `<jsxplaceholder id="${elements.length - 1}"></jsxplaceholder>`;
-    }
-    if(input instanceof Function) {
-      jsx.functions.push(input);
-      input = `"jsx.functions[${jsx.functions.length - 1}].call(this, event)"`;
-    }
+  const WHITESPACE = /[ \r\n\t]/;
+  const EXPRESSION = /(^|[^\w)\]]|return)$/;
 
-    return input + string;
-  }).join("");
-
-  jsx.filterChildren(div);
-
-  if(div.children.length > 1) return jsx.collect(div.children);
-  return div.children[0];
-}
-
-jsx.filterChildren = parent => {
-  if(!parent?.children) return;
-  [...parent.children].forEach(child => {
-    const attributeNames = child.getAttributeNames();
-
-    if(child.nodeName == "JSXPLACEHOLDER") {
-      child.replaceWith(elements[Number(child.id)]);
-    }
-
-    const cel = jsx.registry[child.nodeName];
-    if(cel) {
-      const newChild = cel.call(child, jsx.attributesToObject(child));
-      child.getAttributeNames().forEach(name => newChild.setAttribute(name, child.getAttribute(name)));
-      child.replaceWith(newChild);
-      child = newChild;
-    }
-
-    attributeNames.forEach(name => {
-      const [label, content] = name.split(":");
-      if(content) {
-        if(label == "var") {
-          window[content] = child;
-        } else if(label == "let") {
-          (function addVariable(parent) {
-            parent[content] = child;
-            [...parent.children].forEach(child => addVariable(child));
-          })(div);
-        } else if(label == "data") {
-          let data = child.getAttribute(name);
-          try { data = JSON.parse(data) } catch(e) {}
-          child[content] = data;
+  window.jsx = {
+    _functionRegistry: [],
+    createElement(name, attributes, ...children) {
+      if (typeof name == "function") {
+        return name(attributes, ...children);
+      }
+      const element = name
+        ? document.createElement(name)
+        : document.createDocumentFragment();
+      Object.entries(attributes ?? {}).forEach(([key, value]) => {
+        if (typeof value == "function") {
+          element.setAttribute(
+            key,
+            `jsx._functionRegistry[${jsx._functionRegistry.length}].call(this, event)`
+          );
+          jsx._functionRegistry.push(value);
+          return;
         }
-        if(child.hasAttribute(name)) child.removeAttribute(name);
-      }
-    });
-
-    jsx.filterChildren(child);
-  });
-}
-
-jsx.script = document.currentScript;
-
-jsx.import = async src => {
-  const js = await fetch(src).then(res => res.text());
-  return await import(`data:text/javascript;base64,${btoa(jsx.parse(js))}`);
-}
-
-jsx.registry = {
-  "JSX:COLLECTION"() {
-    jsx.filterChildren(this);
-    return jsx.collect(this.children);
-  }
-};
-jsx.functions = [];
-
-jsx.collect = elements => {
-  const fragment = document.createDocumentFragment();
-  fragment.append(...elements);
-  return fragment;
-}
-
-jsx.attributesToObject = element => {
-  return element.getAttributeNames().reduce((attrs, name) => {
-    let attr = element.getAttribute(name);
-    if(attr.startsWith("jsx.functions")) attr = new Function("event", "return " + attr);
-    return {
-      ...attrs,
-      [name]: attr || true
-    }
-  }, {});
-}
-
-jsx.parse = script => {
-  const stack = [{ type: null }];
-  let esc = false;
-  return [...script].reduce((result, char, i, chars) => {
-    const top = stack.at(-1);
-
-    if(esc) {
-      esc = false;
-      return result + char;
-    }
-
-    if(char == "\\" && top.type != "html") {
-      esc = true;
-      return result + char;
-    }
-
-    if(top.type == "string") {
-      if(char == top.string) {
-        stack.pop();
-      }
-
-      if(char == "{" && top.string == "`" && chars[i - 1] == "$") {
-        stack.push({ type: null });
-      }
-
-      // STRINGSTOP
-      return result + char;
-    }
-
-    if(char == "{") {
-      if(top.type == "html" || top.type == "element") {
-        char = "${";
-      }
-      stack.push({ type: null });
-    }
-    if(char == "}") stack.pop();
-
-    if(char == "<" && (result.match(/(^|[^\w]|return)[ \r\n]*$/) || top.type == "html")) {
-      if(top.type != "html") {
-        char = "jsx`" + char;
-      }
-      stack.push({
-        type: "element",
-        named: false,
-        name: "",
-        closeTested: false
+        element.setAttribute(key, value);
       });
-    }
+      element.append(...children);
+      return element;
+    },
+    async import(src) {
+      const js = await fetch(src).then((res) => res.text());
+      return await import(`data:text/javascript;base64,${btoa(jsx.parse(js))}`);
+    },
+    parse(jsx) {
+      const stack = [{ type: null }];
+      return [...jsx]
+        .reduce((js, char, i) => {
+          const top = stack.at(-1);
 
-    if(top.type == "html") {
-      if(char == "\\") char = "\\\\";
-      if(char == "`") char = "\\`";
+          if (top.type == "comment") {
+            if (char == "\r" || char == "\n") {
+              stack.pop();
+              return js + char;
+            }
 
-      // HTMLSTOP
-      return result + char;
-    }
-
-    if(top.type == "element") {
-      if(!top.closeTested) {
-        if(char == "/") {
-          top.close = true;
-          return result + char;
-        }
-        top.closeTested = true;
-      }
-
-      if(!top.named) {
-        if(char.match(/\w/)) {
-          top.name += char;
-        } else {
-          top.named = true;
-          if(top.name.match(/^[A-Z]/) && !top.close) {
-            result = result.replace(/(\w+)$/, `\${(jsx.registry.${top.name.toUpperCase()}=$1,"$1")}`);
+            return js;
           }
-          if(!top.name) {
-            result += "jsx:collection";
-          }
-        }
-      }
 
-      if(char == ">") {
-        stack.pop();
-        if(result.endsWith("/") || top.close) {
-          if(top.close) {
+          if (top.type == "string") {
+            if (char == "\n") {
+              return js + "\\n";
+            }
+            if (char == "\r") {
+              return js + "\\r";
+            }
+
+            if (top.lesc) {
+              top.lesc = false;
+            }
+
+            if (top.esc) {
+              top.esc = false;
+              top.lesc = true;
+              return js + char;
+            }
+
+            if (char == "\\") {
+              top.esc = true;
+              return js + char;
+            }
+
+            if (top.char == char) {
+              stack.pop();
+              return js + char;
+            }
+
+            if (
+              char == "{" &&
+              jsx[i - 1] == "$" &&
+              !top.lesc &&
+              top.char == "`"
+            ) {
+              stack.push({ type: null });
+              return js + char;
+            }
+
+            return js + char;
+          }
+
+          if (top.type == "html") {
+            if (char == "\n" || char == "\r") {
+              top.newline = true;
+            }
+
+            if (char == "<") {
+              top.newline = false;
+
+              if (top.text) {
+                js += `, ${JSON.stringify(top.text)}`;
+                top.text = "";
+              }
+
+              stack.push({
+                type: "tag",
+                name: "",
+                named: false,
+                closing: null,
+                attrName: "",
+                attrVal: false,
+                fattr: true,
+              });
+              return js + ", ";
+            }
+
+            if (char == "{") {
+              top.newline = false;
+
+              if (top.text) {
+                js += `, ${JSON.stringify(top.text)}`;
+                top.text = "";
+              }
+
+              stack.push({ type: null, close: "" });
+              return js + ", ";
+            }
+
+            if (top.text || !top.newline) {
+              if (char == "\n" || char == "\r") {
+                if (top.text) {
+                  js += `, ${JSON.stringify(top.text)}`;
+                  top.text = "";
+                  return js;
+                }
+              }
+
+              top.text += char;
+              return js;
+            }
+
+            if (!char.match(WHITESPACE)) {
+              top.newline = false;
+              top.text = char;
+              return js;
+            }
+
+            return js;
+          }
+
+          if (top.type == "tag") {
+            if (top.closing === null) {
+              if (char == "/") {
+                top.closing = true;
+                return js;
+              }
+              top.closing = false;
+            }
+
+            if (!top.named) {
+              if (char.match(/\w/)) {
+                top.name += char;
+                return js;
+              }
+              top.named = true;
+              if (top.closing) {
+                js = js.replace(/, $|$/, ")");
+              } else {
+                if (top.name == "head") {
+                  js += `export const head = jsx.createElement("head", {`;
+                } else {
+                  js += `jsx.createElement(${
+                    top.name.match(/^[A-Z]/) ? top.name : `"${top.name}"`
+                  }, { `;
+                }
+              }
+            }
+
+            if (top.attrVal) {
+              if (char == "{") {
+                stack.push({ type: null, close: "" });
+                top.attrVal = false;
+                return js;
+              }
+
+              if (char == '"') {
+                stack.push({ type: "string", char, esc: false, lesc: false });
+                top.attrVal = false;
+                return js + char;
+              }
+            }
+
+            attrNameLogic: if (top.attrName) {
+              if (char.match(WHITESPACE) || char == ">" || char == "/") {
+                if (top.fattr) {
+                  top.fattr = false;
+                } else {
+                  js += ", ";
+                }
+                js += `"${top.attrName}": true`;
+                top.attrName = "";
+                break attrNameLogic;
+              }
+
+              if (char == "=") {
+                if (top.fattr) {
+                  top.fattr = false;
+                } else {
+                  js += ", ";
+                }
+                js += `"${top.attrName}": `;
+                top.attrName = "";
+                top.attrVal = true;
+                return js;
+              }
+
+              top.attrName += char;
+              return js;
+            }
+
+            if (char == ">") {
+              stack.pop();
+              if (top.closing) {
+                stack.pop();
+                return js;
+              }
+
+              js += " }";
+              js = js.replace(/\{  \}$/, "null");
+              if (jsx[i - 1] == "/") {
+                return js + ")";
+              }
+
+              stack.push({ type: "html", text: "", newline: false });
+              return js;
+            }
+
+            if (!char.match(WHITESPACE) && char != "/") {
+              top.attrName += char;
+              return js;
+            }
+
+            return js;
+          }
+
+          if (char == "/" && jsx[i + 1] == "/") {
+            stack.push({ type: "comment" });
+            return js;
+          }
+
+          if (char == "<" && js.trim().match(EXPRESSION)) {
+            stack.push({
+              type: "tag",
+              name: "",
+              named: false,
+              closing: null,
+              attrName: "",
+              attrVal: false,
+              fattr: true,
+            });
+            return js;
+          }
+
+          if (
+            char == '"' ||
+            char == "'" ||
+            char == "`" ||
+            (char == "/" && js.trim().match(EXPRESSION))
+          ) {
+            stack.push({ type: "string", char, esc: false, lesc: false });
+            return js + char;
+          }
+
+          if (char == "{") {
+            stack.push({ type: null });
+            return js + char;
+          }
+
+          if (char == "}") {
             stack.pop();
+            return js + (top.close ?? char);
           }
-          if(stack.at(-1).type != "html") {
-            char += "`";
-          }
-        } else {
-          stack.push({
-            type: "html"
-          })
-        }
-      }
 
-      // ELEMENTSTOP
-      return result + char;
-    }
-
-    if(char == "'" || char == '"' || char == "`") {
-      stack.push({
-        type: "string",
-        string: char
-      });
-    }
-
-    return result + char;
-  }, "")
-  .replace(/^ *(import)( *\w* *)?(, *)?{?(.*?)}?( *from *)?(".+?")/gm, (_match, _import, def, _comma, obj, _from, src) => 
-    `let {${def.trim() ? `default: ${def}` : ""}${def.trim() && obj ? "," : ""}${obj}} = await jsx.import(${src})`
-  );
+          return js + char;
+        }, "")
+        .replace(
+          /^ *(import)( *\w* *)?(, *)?{?(.*?)}?( *from *)?(".+?")/gm,
+          (_match, _import, def, _comma, obj, _from, src) =>
+            `let {${def.trim() ? `default: ${def}` : ""}${
+              def.trim() && obj ? "," : ""
+            }${obj}} = await jsx.import(${src})`
+        );
+    },
+  };
 }
 
-new MutationObserver(mutations => {
-  for(const { addedNodes } of mutations) {
-    for(const node of addedNodes) {
-      if(node.nodeName == "SCRIPT" && node.hasAttribute("jsx") && node.getAttribute("jsx") != "compiled") {
-        if(node.innerHTML.match(/^ *import/gm)) node.setAttribute("async", "");
-        if(node.src) {
-          fetch(node.src).then(res => res.text()).then(content => {
-            node.innerHTML = jsx.parse(content);
-            const script = document.createElement("script");
-            node.replaceWith(script);
-            script.replaceWith(node);
-            node.setAttribute("jsx", "compiled");
-          });
+new MutationObserver((mutations) => {
+  for (const { addedNodes } of mutations) {
+    for (const node of addedNodes) {
+      if (
+        node.nodeName == "SCRIPT" &&
+        node.hasAttribute("jsx") &&
+        node.getAttribute("jsx") != "compiled"
+      ) {
+        if (node.innerHTML.match(/^ *import/gm)) node.setAttribute("async", "");
+        if (node.src) {
+          fetch(node.src)
+            .then((res) => res.text())
+            .then((content) => {
+              node.innerHTML = jsx.parse(content);
+              const script = document.createElement("script");
+              node.replaceWith(script);
+              script.replaceWith(node);
+              node.setAttribute("jsx", "compiled");
+            });
           node.removeAttribute("src");
           return;
         }

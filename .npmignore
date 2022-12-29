@@ -1,0 +1,9 @@
+.gitignore
+.npmignore
+.prettierignore
+
+index.html
+script.js
+
+jsx.js
+jsx.png
