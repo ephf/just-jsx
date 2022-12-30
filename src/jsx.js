@@ -1,5 +1,13 @@
 {
-  if (typeof window == "undefined") global.window = global;
+  if (typeof window == "undefined") {
+    Object.assign(global, {
+      window: global,
+      MutationObserver: class {
+        observe() {}
+      },
+      document: null,
+    });
+  }
 
   const WHITESPACE = /[ \r\n\t]/;
   const EXPRESSION = /(^|[^\w)\]]|return)$/;
