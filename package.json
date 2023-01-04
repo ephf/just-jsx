@@ -1,6 +1,6 @@
 {
   "name": "just-jsx",
-  "version": "6.1.0",
+  "version": "6.1.1",
   "description": "A simple web package that allows you to compile JSX on the go.",
   "main": "src/jsx.min.js",
   "bin": {

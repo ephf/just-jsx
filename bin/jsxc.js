@@ -1,7 +1,7 @@
 #!node
 const fs = require("fs");
 const path = require("path");
-require("../src/jsx.js");
+require("../src/jsx.min.js");
 
 const [, , ...args] = process.argv;
 const tags = { "-o": "out" };
