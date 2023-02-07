@@ -15,9 +15,11 @@
   window.jsx = {
     _functionRegistry: [],
     createElement(name, attributes, ...children) {
-      children = children.map((child) =>
-        child instanceof Array ? jsx.createElement("", null, ...child) : child
-      );
+      children = children
+        .map((child) =>
+          child instanceof Array ? jsx.createElement("", null, ...child) : child
+        )
+        .filter((child) => child !== null);
       if (typeof name == "function") {
         return name(attributes, ...children);
       }
